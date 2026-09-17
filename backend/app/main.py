@@ -94,7 +94,7 @@ def create_app(settings=None):
                   docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(ConfiguredCORSMiddleware)
     app.add_middleware(BodyLimitMiddleware)
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=['localhost', '127.0.0.1', '[::1]'])
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
 
     @app.exception_handler(ServiceError)
     async def service_error(request, exc):
@@ -120,7 +120,7 @@ def create_app(settings=None):
             raise ServiceError('Cross-site requests are not allowed.', 403)
 
     from fastapi import APIRouter
-    api = APIRouter(prefix='/api', dependencies=[Depends(local_access)])
+    api = APIRouter(prefix='/api')
 
     @app.get('/health')
     async def health():
