@@ -9,6 +9,19 @@ logger = logging.getLogger(__name__)
 INSUFFICIENT = 'The saved research material does not provide enough information to answer this question.'
 
 
+def _extract_citations(text: str) -> set[int]:
+    cited = set()
+    for block in re.findall(r'\[([\d\s,\-]+)\]', text):
+        for part in re.split(r'[,\s]+', block):
+            if '-' in part:
+                sub = part.split('-')
+                if len(sub) == 2 and sub[0].isdigit() and sub[1].isdigit():
+                    cited.update(range(int(sub[0]), int(sub[1]) + 1))
+            elif part.isdigit():
+                cited.add(int(part))
+    return cited
+
+
 class RAGService:
     def __init__(self, db, embeddings, llm, settings):
         self.db, self.embeddings, self.llm, self.settings = db, embeddings, llm, settings
@@ -52,6 +65,8 @@ class RAGService:
             opening_ids = {c['id'] for c in openings}
             chunks = (openings + [c for c in chunks if c.get('id') not in opening_ids])[:max(self.settings.rag_top_k, len(request.paper_ids or []))]
         if not chunks:
+            if request.paper_ids:
+                return {'type': 'rag_answer', 'answer': 'The selected paper(s) do not contain matching information for this question. Try deselecting the paper filters to search your entire library.', 'sources': []}
             return {'type': 'rag_answer', 'answer': INSUFFICIENT, 'sources': []}
         context = [{'source': i + 1, 'paper': c['paper_title'], 'page_start': c['page_start'],
                     'page_end': c['page_end'], 'text': c['content']} for i, c in enumerate(chunks)]
@@ -67,12 +82,14 @@ class RAGService:
             f'Research context (JSON):\n{json.dumps(context, ensure_ascii=False)}\n\nQuestion:\n{request.message}',
             2400,
         )
-        cited = set(int(n) for n in re.findall(r'\[(\d+)\]', answer))
-        if not cited or any(n < 1 or n > len(chunks) for n in cited):
-            # Fail closed if the model cannot identify valid support.
+        cited = _extract_citations(answer)
+        valid_cited = {n for n in cited if 1 <= n <= len(chunks)}
+        if not valid_cited:
+            # Fail closed if the model cannot identify valid support from retrieved chunks.
             return {'type': 'rag_answer', 'answer': INSUFFICIENT, 'sources': []}
         sources = [{'source_number': i + 1, 'paper_id': c['paper_id'], 'paper_title': c['paper_title'],
                     'page_start': c['page_start'], 'page_end': c['page_end'], 'similarity': c['similarity']}
-                   for i, c in enumerate(chunks) if i + 1 in cited]
+                   for i, c in enumerate(chunks) if i + 1 in valid_cited]
         logger.info('rag_query_completed project_id=%s sources=%s', project_id, len(sources))
         return {'type': 'rag_answer', 'answer': answer, 'sources': sources}
+

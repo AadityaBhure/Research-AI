@@ -21,7 +21,7 @@ class EmbeddingService:
             from tokenizers import Tokenizer
             self._tokenizer = Tokenizer.from_pretrained(self.settings.embedding_model)
             self._tokenizer.no_truncation()
-            self._model = TextEmbedding(model_name=self.settings.embedding_model, threads=2)
+            self._model = TextEmbedding(model_name=self.settings.embedding_model, threads=None)
 
     def chunk_pages(self, pages) -> list[Chunk]:
         with self._lock:
@@ -31,7 +31,7 @@ class EmbeddingService:
     def documents(self, texts: list[str]) -> list[list[float]]:
         with self._lock:
             self._load()
-            return self._validate(list(self._model.passage_embed(texts, batch_size=16)))
+            return self._validate(list(self._model.passage_embed(texts, batch_size=32)))
 
     def query(self, text: str) -> list[float]:
         with self._lock:

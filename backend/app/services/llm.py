@@ -29,7 +29,12 @@ class LLMService:
                         timeout=90,
                     )
                     if response.status_code in (429, 500, 502, 503, 504) and attempt < 2:
-                        await asyncio.sleep(2 ** attempt)
+                        retry_after = response.headers.get('retry-after')
+                        try:
+                            delay = float(retry_after) if retry_after else float(min(12, 3 * (attempt + 1)))
+                        except ValueError:
+                            delay = float(min(12, 3 * (attempt + 1)))
+                        await asyncio.sleep(max(1.0, delay))
                         continue
                     response.raise_for_status()
                     text = response.json()['choices'][0]['message']['content']
@@ -38,7 +43,7 @@ class LLMService:
                     return text.strip()
                 except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
                     if attempt < 2:
-                        await asyncio.sleep(2 ** attempt)
+                        await asyncio.sleep(3 * (attempt + 1))
                         continue
                     raise ServiceError('Groq is unavailable or its model/key configuration needs attention. Please retry.') from None
         raise ServiceError('Groq did not return an answer.')
