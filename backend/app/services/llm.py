@@ -11,6 +11,32 @@ class LLMService:
         self.settings = settings
         self.semaphore = asyncio.Semaphore(2)
 
+    async def discovery_turn(self, messages, tools=None):
+        """One bounded Groq turn. Tool execution is exclusively backend-owned."""
+        body = {
+            'model': self.settings.groq_model, 'messages': messages,
+            'temperature': 0.2, 'max_completion_tokens': 1600,
+            **({'reasoning_effort': 'low'} if self.settings.groq_model.startswith('openai/gpt-oss') else {}),
+        }
+        if tools:
+            body.update(tools=tools, tool_choice='auto', parallel_tool_calls=False)
+        else:
+            body['tool_choice'] = 'none'
+        try:
+            async with self.semaphore:
+                response = await self.client.post(
+                    'https://api.groq.com/openai/v1/chat/completions',
+                    headers={'Authorization': f'Bearer {self.settings.groq_api_key.get_secret_value()}'},
+                    json=body, timeout=60,
+                )
+            response.raise_for_status()
+            message = response.json()['choices'][0]['message']
+            if not isinstance(message, dict):
+                raise ValueError('Invalid message')
+            return message
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
+            raise ServiceError('Groq research discovery is unavailable. Check its model/key configuration and retry.', 502) from None
+
     async def generate(self, system: str, prompt: str, max_tokens: int = 1400) -> str:
         async with self.semaphore:
             for attempt in range(3):

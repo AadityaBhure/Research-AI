@@ -16,7 +16,7 @@ export interface Source {
   source_number: number; paper_id: string; paper_title: string; page_start: number; page_end: number; similarity: number | null;
 }
 
-export interface SearchResponse { papers: Paper[]; warnings: string[] }
+export interface SearchResponse { papers: Paper[]; warnings: string[]; message?: string; search_performed?: boolean }
 export interface AnswerResponse { answer: string; sources: Source[] }
 
 export function paperKey(paper: Paper): string {

@@ -117,7 +117,7 @@ function Workspace({ project, onBack, onEdit }: { project: Project; onBack: () =
     try {
       if (mode === 'search') {
         const data = await api<SearchResponse>(`${base}/papers/search`, { method: 'POST', body: JSON.stringify({ query: question, limit: 8 }) });
-        if (alive.current) setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', text: data.papers.length ? `Found ${data.papers.length} papers to explore. Save the ones you want in your library.${data.warnings.length ? '\n' + data.warnings.join(' ') : ''}` : 'No papers found. Try a broader topic or different keywords.', papers: data.papers }]);
+        if (alive.current) setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', text: `${data.message || (data.papers.length ? `Found ${data.papers.length} papers to explore. Save the ones you want in your library.` : 'No papers found. Try a broader topic or different keywords.')}${data.warnings.length ? '\n' + data.warnings.join(' ') : ''}`, papers: data.papers }]);
       } else {
         const data = await api<AnswerResponse>(`${base}/chat`, { method: 'POST', body: JSON.stringify({ message: question, paper_ids: selected.size ? [...selected] : null }) });
         if (alive.current) setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', text: data.answer, sources: data.sources }]);

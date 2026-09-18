@@ -4,3 +4,5 @@ httpx>=0.28,<1
 pydantic-settings>=2.8,<3
 python-multipart>=0.0.20,<1
 pymupdf>=1.25,<2
+mcp==1.30.0
+jsonschema>=4.23,<5
