@@ -16,50 +16,47 @@ def _extract_citations(text: str) -> set[int]:
             if '-' in part:
                 sub = part.split('-')
                 if len(sub) == 2 and sub[0].isdigit() and sub[1].isdigit():
-                    cited.update(range(int(sub[0]), int(sub[1]) + 1))
+                    start, end = int(sub[0]), int(sub[1])
+                    if 1 <= start <= end <= 100:
+                        cited.update(range(start, end + 1))
             elif part.isdigit():
                 cited.add(int(part))
     return cited
 
 
 class RAGService:
-    def __init__(self, db, embeddings, llm, settings):
-        self.db, self.embeddings, self.llm, self.settings = db, embeddings, llm, settings
+    def __init__(self, db, vectors, llm, settings):
+        self.db, self.vectors, self.llm, self.settings = db, vectors, llm, settings
 
     async def answer(self, project_id, request):
         logger.info('rag_query_started project_id=%s', project_id)
-        ready = await self.db.rows('papers', project_id=f'eq.{project_id}', status='eq.ready', select='id,title')
+        ready = await self.db.rows('papers', project_id=f'eq.{project_id}', status='eq.ready',
+                                   embedding_model=f'eq.{self.settings.embedding_model}', select='id,title,ingestion_token')
         if not ready:
-            return {'type': 'rag_answer', 'answer': 'This project has no searchable papers yet. Save or upload a PDF and wait until it is ready.', 'sources': []}
+            return {'type': 'rag_answer', 'answer': 'This project has no papers indexed with Zilliz yet. Save/upload a PDF and wait until it is ready.', 'sources': []}
         if request.paper_ids:
             for paper_id in request.paper_ids:
                 await self.db.paper(project_id, str(paper_id))
-        vector = await asyncio.to_thread(self.embeddings.query, request.message)
-        rpc_args = {
-            'query_embedding': vector, 'match_project_id': str(project_id),
-            'match_count': self.settings.rag_top_k,
-            'filter_paper_ids': [str(x) for x in request.paper_ids] if request.paper_ids else None,
-            'min_similarity': self.settings.rag_min_similarity,
-        }
+        selected_ids = {str(x) for x in request.paper_ids} if request.paper_ids else None
+        eligible = [p for p in ready if p.get('ingestion_token') and (selected_ids is None or p['id'] in selected_ids)]
+        if not eligible:
+            return {'type': 'rag_answer', 'answer': 'The selected papers are not ready for Zilliz search.', 'sources': []}
         if request.paper_ids and len(request.paper_ids) > 1:
             # Allocate context to each selected paper instead of letting one dominate a comparison.
             quota = max(1, self.settings.rag_top_k // len(request.paper_ids))
-            groups = await asyncio.gather(*(self.db.rpc('match_document_chunks', {
-                **rpc_args, 'filter_paper_ids': [str(paper_id)], 'match_count': quota,
-            }) for paper_id in request.paper_ids))
+            groups = await asyncio.gather(*(self.vectors.search(project_id, [paper], request.message, quota)
+                                            for paper in eligible))
             chunks = [chunk for group in groups for chunk in group]
         else:
-            chunks = await self.db.rpc('match_document_chunks', rpc_args)
+            chunks = await self.vectors.search(project_id, eligible, request.message, self.settings.rag_top_k)
         if re.search(r'\b(contributions?|main findings|summari[sz]e|summary|overview|compare)\b', request.message, re.I):
             # Generic overview questions often retrieve references rather than the abstract.
             # Include each relevant paper's opening chunk as explicit, project-scoped context.
             selected_ids = {str(x) for x in request.paper_ids} if request.paper_ids else None
-            overview_papers = [p for p in ready if selected_ids is None or p['id'] in selected_ids]
+            overview_papers = eligible
             openings = []
             for paper in overview_papers[:self.settings.rag_top_k]:
-                rows = await self.db.rows('document_chunks', project_id=f'eq.{project_id}',
-                    paper_id=f'eq.{paper["id"]}', chunk_index='eq.0',
-                    select='id,paper_id,content,page_start,page_end', limit='1')
+                rows = await self.vectors.opening(project_id, paper)
                 if rows:
                     openings.append({**rows[0], 'paper_title': paper['title'], 'similarity': None})
             opening_ids = {c['id'] for c in openings}
@@ -82,6 +79,9 @@ class RAGService:
             f'Research context (JSON):\n{json.dumps(context, ensure_ascii=False)}\n\nQuestion:\n{request.message}',
             2400,
         )
+        # Groq sometimes emits CJK/full-width citation brackets despite the
+        # ASCII example. Normalize numeric citations, not arbitrary prose.
+        answer = re.sub(r'[【［]([\d\s,\-]+)[】］]', r'[\1]', answer)
         cited = _extract_citations(answer)
         valid_cited = {n for n in cited if 1 <= n <= len(chunks)}
         if not valid_cited:
@@ -92,4 +92,3 @@ class RAGService:
                    for i, c in enumerate(chunks) if i + 1 in valid_cited]
         logger.info('rag_query_completed project_id=%s sources=%s', project_id, len(sources))
         return {'type': 'rag_answer', 'answer': answer, 'sources': sources}
-

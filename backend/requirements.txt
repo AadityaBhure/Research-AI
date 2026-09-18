@@ -4,5 +4,3 @@ httpx>=0.28,<1
 pydantic-settings>=2.8,<3
 python-multipart>=0.0.20,<1
 pymupdf>=1.25,<2
-fastembed>=0.6,<1
-tokenizers>=0.21,<1

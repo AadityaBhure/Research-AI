@@ -6,10 +6,21 @@
     },
     "backend": {
       "root": "backend/",
-      "entrypoint": "app/main.py"
+      "framework": "fastapi",
+      "entrypoint": "app.main:app",
+      "functions": {
+        "app/main.py": {
+          "maxDuration": 300,
+          "excludeFiles": "{.venv/**,.env,.env.*,**/__pycache__/**,.cache/**,migrations/**}"
+        }
+      }
     }
   },
   "rewrites": [
+    {
+      "source": "/health",
+      "destination": { "service": "backend" }
+    },
     {
       "source": "/api/(.*)",
       "destination": {

@@ -60,6 +60,21 @@ class SupabaseService:
         await self.request('POST', f'/storage/v1/object/{self.settings.storage_bucket}/{quote(path, safe="/")}',
                            content=content, headers={'Content-Type': 'application/pdf', 'x-upsert': 'true'})
 
+    async def read_pdf(self, path):
+        # Only the stored, server-owned bucket path is accepted, never a client URL.
+        url = self.base + f'/storage/v1/object/authenticated/{self.settings.storage_bucket}/{quote(path, safe="/")}'
+        try:
+            async with self.client.stream('GET', url, headers=self.headers, timeout=45) as response:
+                response.raise_for_status()
+                content = bytearray()
+                async for block in response.aiter_bytes():
+                    content.extend(block)
+                    if len(content) > self.settings.max_pdf_bytes:
+                        raise ServiceError('Stored PDF exceeds the download limit.', 400)
+                return bytes(content)
+        except httpx.HTTPError:
+            raise ServiceError('Could not read the stored PDF. Check storage or attach the PDF again.', 502) from None
+
     async def remove_pdfs(self, paths):
         for start in range(0, len(paths), 100):
             await self.request('DELETE', f'/storage/v1/object/{self.settings.storage_bucket}',

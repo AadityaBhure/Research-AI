@@ -13,7 +13,7 @@ from app.services.errors import ServiceError
 
 def validate_pdf(data: bytes, maximum: int) -> None:
     if not data or len(data) > maximum:
-        raise ServiceError('PDF is empty or exceeds the 30 MB limit.', 400)
+        raise ServiceError(f'PDF is empty or exceeds this deployment\'s upload/download limit ({maximum:,} bytes).', 400)
     if not data[:1024].lstrip().startswith(b'%PDF-'):
         raise ServiceError('The file is not a valid PDF. Upload the actual paper PDF.', 400)
 

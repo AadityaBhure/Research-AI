@@ -1,0 +1,9 @@
+**/.env
+**/.env.*
+**/.venv/**
+**/__pycache__/**
+**/.cache/**
+**/*.pyc
+**/*.log
+**/node_modules/**
+**/dist/**

@@ -43,6 +43,8 @@ class SearchRequest(BaseModel):
 class PaperInput(BaseModel):
     model_config = ConfigDict(extra='ignore')
     semantic_scholar_paper_id: str | None = Field(default=None, max_length=100)
+    search_provider: str | None = Field(default=None, max_length=50)
+    provider_paper_id: str | None = Field(default=None, max_length=500)
     title: str = Field(min_length=1, max_length=1000)
     authors: list[str] = Field(default_factory=list, max_length=5000)
     abstract: str | None = Field(default=None, max_length=30000)
